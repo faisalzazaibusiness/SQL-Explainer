@@ -5,11 +5,12 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
 [![Tailwind CSS v4](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss)](https://tailwindcss.com)
 [![Google Gemini](https://img.shields.io/badge/Google_Gemini-3.6_Flash-8E75B2?style=for-the-badge&logo=googlegemini)](https://ai.google.dev)
+[![Vercel Ready](https://img.shields.io/badge/Vercel-Serverless_Ready-000000?style=for-the-badge&logo=vercel)](https://vercel.com)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE)
 
-> **Created with ❤️ by Faisal Zazai**
+> **Built with ❤️ by Faisal Zazai**
 
-**SQL Explainer** is an enterprise-grade AI developer application that turns complex SQL queries into clear, logical, step-by-step plain-English walkthroughs. It highlights SQL code line ranges, detects performance anti-patterns, recommends 1-click optimized queries, visualizes data pipeline flows, measures cognitive execution complexity, and transpile queries across multiple database dialects.
+**SQL Explainer** is an enterprise-grade AI developer application that turns complex SQL queries into clear, logical, step-by-step plain-English walkthroughs. It highlights SQL code line ranges, detects performance anti-patterns, recommends 1-click optimized queries, visualizes data pipeline flows, measures cognitive execution complexity, and transpiles queries across multiple database dialects.
 
 ---
 
@@ -34,82 +35,67 @@
 | **Frontend Framework** | React 19, TypeScript 5.8, Vite 6 |
 | **Styling & UI** | Tailwind CSS v4, Lucide React Icons |
 | **Code Editor** | `@uiw/react-codemirror` with `@codemirror/lang-sql` |
-| **Backend Server** | Node.js, Express v4, `tsx` (Dev), `esbuild` (Prod CJS Bundle) |
+| **Backend / Serverless** | Node.js, Express v4, Vercel Serverless Functions (`@vercel/node`) |
 | **AI Infrastructure** | `@google/genai` (Google Gemini 3.6 Flash), OpenRouter / Groq Fallback |
 | **Persistence** | LocalStorage (Query History, Settings, Theme) |
 
 ---
 
-## 🏗️ Architecture Flow
+## 🔺 Vercel Deployment Guide (Fixing 404 API Errors)
 
-```
-[ User Input / Sample Query ] ➔ [ CodeMirror Editor ]
-                                        │
-                                        ▼ (POST /api/explain)
-                         ┌─────────────────────────────┐
-                         │    Express Backend Proxy    │
-                         └──────────────┬──────────────┘
-                                        │
-             ┌──────────────────────────┼──────────────────────────┐
-             ▼                          ▼                          ▼
-   [ Google Gemini AI ]       [ OpenRouter Fallback ]     [ Groq Fallback ]
-             │                          │                          │
-             └──────────────────────────┴──────────────────────────┘
-                                        │ (Structured JSON)
-                                        ▼
-                      ┌──────────────────────────────────┐
-                      │    Explanation & Report View     │
-                      ├──────────────────────────────────┤
-                      │  • Clause-by-Clause Walkthrough  │
-                      │  • Performance Anti-Pattern Rules│
-                      │  • 1-Click Optimized SQL         │
-                      │  • Cognitive Complexity Gauge    │
-                      │  • Multi-Dialect Transpiler      │
-                      │  • Output Schema Simulator       │
-                      └──────────────────────────────────┘
-```
+### Why the 404 Error Occurs on Vercel
+When deploying a full-stack Vite app to Vercel, Vercel by default only serves the built static frontend files in `dist/`. The backend Express endpoints (like `/api/explain`) will return `404 Not Found` unless configured as Vercel Serverless Functions.
+
+### How We Fixed It
+The repository now includes:
+1. `api/explain.ts`: A dedicated Vercel Serverless Function entry point wrapping the AI explanation service.
+2. `vercel.json`: Configuration routing `/api/explain` to the serverless function and catch-all routes to SPA `index.html`.
+
+### Step-by-Step Vercel Setup
+
+1. **Push Changes to GitHub**:
+   Ensure you push the latest codebase (including `api/explain.ts` and `vercel.json`) to your GitHub repository.
+
+2. **Configure Environment Variables in Vercel**:
+   - Go to your project on the [Vercel Dashboard](https://vercel.com/dashboard).
+   - Click **Settings** ➔ **Environment Variables**.
+   - Add the following environment variable:
+     - **Key**: `GEMINI_API_KEY`
+     - **Value**: Your Google Gemini API key (get one free at [Google AI Studio](https://aistudio.google.com)).
+   - *(Optional)* Add `OPENROUTER_API_KEY` or `GROQ_API_KEY` if you want multi-provider fallback.
+
+3. **Deploy / Redeploy**:
+   - Go to the **Deployments** tab in Vercel.
+   - Click **Redeploy** (or push a new commit to trigger an automatic deployment).
+   - Once deployed, your `/api/explain` endpoint will respond with status `200 OK`.
 
 ---
 
-## 🚀 Quick Start & Installation
+## 🚀 Local Development & Quick Start
 
 ### Prerequisites
 
 - **Node.js**: `v18.0.0` or higher
 - **npm**: `v9.0.0` or higher
-- **Gemini API Key** (optional but recommended): Get a free key at [Google AI Studio](https://aistudio.google.com)
+- **Gemini API Key**: Get a free key at [Google AI Studio](https://aistudio.google.com)
 
-### 1. Clone the Repository
+### 1. Clone & Install
 
 ```bash
 git clone https://github.com/faisalzazai/sql-explainer.git
 cd sql-explainer
-```
-
-### 2. Install Dependencies
-
-```bash
 npm install
 ```
 
-### 3. Configure Environment Variables
+### 2. Configure Environment Variables
 
-Create a `.env` file in the project root (or copy `.env.example`):
-
-```bash
-cp .env.example .env
-```
-
-Set your API keys:
+Create `.env`:
 
 ```env
-# .env
 GEMINI_API_KEY="your_gemini_api_key_here"
-OPENROUTER_API_KEY="optional_openrouter_key"
-GROQ_API_KEY="optional_groq_key"
 ```
 
-### 4. Run Development Server
+### 3. Run Local Development Server
 
 ```bash
 npm run dev
@@ -119,85 +105,9 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 📦 Production Build & Deployment
-
-### Build Command
-
-Compiles Vite frontend assets and bundles the Node/Express backend into `dist/server.cjs` using `esbuild`:
-
-```bash
-npm run build
-```
-
-### Start Production Server
-
-```bash
-npm run start
-```
-
-The application runs on `http://0.0.0.0:3000`.
-
----
-
-## 📡 API Reference
-
-### `POST /api/explain`
-
-Analyzes a SQL query and returns a structured JSON response.
-
-#### Request Body
-
-```json
-{
-  "query": "SELECT u.id, COUNT(o.id) FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id;",
-  "dialect": "PostgreSQL",
-  "depth": "Beginner"
-}
-```
-
-#### Response Structure
-
-```json
-{
-  "isValidSql": true,
-  "summary": "Groups order totals per user by joining users and orders tables.",
-  "tablesInvolved": ["users", "orders"],
-  "detectedDialect": "PostgreSQL",
-  "steps": [
-    {
-      "stepNumber": 1,
-      "title": "Data Sources & Joins",
-      "clause": "FROM users u JOIN orders o ON u.id = o.user_id",
-      "explanation": "Combines users and orders on matching user IDs.",
-      "lineStart": 1,
-      "lineEnd": 1
-    }
-  ],
-  "antiPatterns": [],
-  "optimizedSql": "SELECT u.id, COUNT(o.id) AS total_orders FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id;",
-  "optimizationNotes": "Added explicit column alias for count aggregate."
-}
-```
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
-| :--- | :--- |
-| `⌘ + Enter` / `Ctrl + Enter` | Trigger SQL Query Analysis |
-| `Format Button` | Capitalize SQL Keywords & Indent Clauses |
-| `Copy Button` | Copy SQL or Markdown Report |
-
----
-
 ## 👤 Author & Credits
 
 Designed and developed with precision by **Faisal Zazai**.
 
 - **Email**: `faisalzazai.business@gmail.com`
 - **License**: Apache 2.0
-
----
-
-*Enjoy clear, transparent SQL queries with SQL Explainer!*
