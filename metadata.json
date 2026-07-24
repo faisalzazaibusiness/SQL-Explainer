@@ -1,0 +1,6 @@
+{
+  "name": "SQL Explainer",
+  "description": "Turn complex SQL queries into plain-English, step-by-step walkthroughs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
