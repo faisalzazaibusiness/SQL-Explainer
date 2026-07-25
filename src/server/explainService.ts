@@ -1,9 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Environment variables
-const getGeminiKey = () => process.env.GEMINI_API_KEY;
-const getOpenRouterKey = () => process.env.OPENROUTER_API_KEY;
+// Read API keys from environment variables
 const getGroqKey = () => process.env.GROQ_API_KEY;
+const getOpenRouterKey = () => process.env.OPENROUTER_API_KEY;
+const getGeminiKey = () => process.env.GEMINI_API_KEY;
 
 export function buildSystemPrompt(dialect: string, depth: string) {
   const depthGuide = depth === "Technical"
@@ -64,6 +64,121 @@ Return ONLY valid JSON matching this exact structure:
 }`;
 }
 
+function cleanAndParseJson(rawText: string) {
+  let cleaned = rawText.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  }
+  const startIdx = cleaned.indexOf("{");
+  const endIdx = cleaned.lastIndexOf("}");
+  if (startIdx !== -1 && endIdx > startIdx) {
+    cleaned = cleaned.substring(startIdx, endIdx + 1);
+  }
+  return JSON.parse(cleaned);
+}
+
+async function callGroq(query: string, dialect: string, depth: string) {
+  const key = getGroqKey();
+  if (!key) throw new Error("Groq API Key missing");
+
+  const models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"];
+  let lastErr: any = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: buildSystemPrompt(dialect, depth) },
+            { role: "user", content: `Analyze this SQL query:\n\n\`\`\`sql\n${query}\n\`\`\`` }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.1,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Groq [${model}] HTTP ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error(`Groq [${model}] returned empty body`);
+
+      return {
+        data: cleanAndParseJson(content),
+        model: `Groq (${model})`
+      };
+    } catch (err: any) {
+      console.warn(`Groq model ${model} failed:`, err.message);
+      lastErr = err;
+    }
+  }
+
+  throw lastErr || new Error("All Groq models failed");
+}
+
+async function callOpenRouter(query: string, dialect: string, depth: string) {
+  const key = getOpenRouterKey();
+  if (!key) throw new Error("OpenRouter API Key missing");
+
+  const models = [
+    "meta-llama/llama-3.3-70b-instruct",
+    "google/gemini-2.0-flash-lite-001",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1-distill-llama-70b"
+  ];
+  let lastErr: any = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${key}`,
+          "HTTP-Referer": "https://sqlexplainer.app",
+          "X-Title": "SQL Explainer",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: buildSystemPrompt(dialect, depth) },
+            { role: "user", content: `Analyze this SQL query:\n\n\`\`\`sql\n${query}\n\`\`\`` }
+          ],
+          temperature: 0.1,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`OpenRouter [${model}] HTTP ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error(`OpenRouter [${model}] returned empty body`);
+
+      return {
+        data: cleanAndParseJson(content),
+        model: `OpenRouter (${model})`
+      };
+    } catch (err: any) {
+      console.warn(`OpenRouter model ${model} failed:`, err.message);
+      lastErr = err;
+    }
+  }
+
+  throw lastErr || new Error("All OpenRouter models failed");
+}
+
 async function callGemini(query: string, dialect: string, depth: string) {
   const key = getGeminiKey();
   if (!key) throw new Error("GEMINI_API_KEY is not configured.");
@@ -86,73 +201,10 @@ async function callGemini(query: string, dialect: string, depth: string) {
 
   const text = response.text;
   if (!text) throw new Error("Empty response from Gemini");
-  return JSON.parse(text);
-}
-
-async function callOpenRouter(query: string, dialect: string, depth: string) {
-  const key = getOpenRouterKey();
-  if (!key) throw new Error("OPENROUTER_API_KEY is not configured.");
-
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${key}`,
-      "HTTP-Referer": "https://sqlexplainer.app",
-      "X-Title": "SQL Explainer",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "meta-llama/llama-3.3-70b-instruct:free",
-      messages: [
-        { role: "system", content: buildSystemPrompt(dialect, depth) },
-        { role: "user", content: `Analyze this SQL query:\n\n\`\`\`sql\n${query}\n\`\`\`` }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`OpenRouter HTTP ${response.status}: ${errText}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Empty response from OpenRouter");
-  return JSON.parse(content);
-}
-
-async function callGroq(query: string, dialect: string, depth: string) {
-  const key = getGroqKey();
-  if (!key) throw new Error("GROQ_API_KEY is not configured.");
-
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: buildSystemPrompt(dialect, depth) },
-        { role: "user", content: `Analyze this SQL query:\n\n\`\`\`sql\n${query}\n\`\`\`` }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Groq HTTP ${response.status}: ${errText}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Empty response from Groq");
-  return JSON.parse(content);
+  return {
+    data: cleanAndParseJson(text),
+    model: "Google Gemini 3.6 Flash"
+  };
 }
 
 export async function handleExplainRequest(query: string, dialect: string = "Auto-detect", depth: string = "Beginner") {
@@ -169,58 +221,57 @@ export async function handleExplainRequest(query: string, dialect: string = "Aut
   }
 
   let providerUsed = "";
-  let result: any = null;
-  let lastError: any = null;
+  let resultData: any = null;
+  let errors: string[] = [];
 
-  if (getGeminiKey()) {
+  // Priority 1: Groq
+  if (getGroqKey()) {
     try {
-      result = await callGemini(query, dialect, depth);
-      providerUsed = "Google Gemini 3.6 Flash";
+      const res = await callGroq(query, dialect, depth);
+      resultData = res.data;
+      providerUsed = res.model;
     } catch (err: any) {
-      console.warn("Gemini call failed:", err.message);
-      lastError = err;
+      errors.push(`Groq: ${err.message}`);
     }
   }
 
-  if (!result && getOpenRouterKey()) {
+  // Priority 2: OpenRouter
+  if (!resultData && getOpenRouterKey()) {
     try {
-      result = await callOpenRouter(query, dialect, depth);
-      providerUsed = "OpenRouter (Llama 3.3 70B)";
+      const res = await callOpenRouter(query, dialect, depth);
+      resultData = res.data;
+      providerUsed = res.model;
     } catch (err: any) {
-      console.warn("OpenRouter call failed:", err.message);
-      lastError = err;
+      errors.push(`OpenRouter: ${err.message}`);
     }
   }
 
-  if (!result && getGroqKey()) {
+  // Priority 3: Gemini (optional fallback)
+  if (!resultData && getGeminiKey()) {
     try {
-      result = await callGroq(query, dialect, depth);
-      providerUsed = "Groq (Llama 3.3 Versatile)";
+      const res = await callGemini(query, dialect, depth);
+      resultData = res.data;
+      providerUsed = res.model;
     } catch (err: any) {
-      console.warn("Groq call failed:", err.message);
-      lastError = err;
+      errors.push(`Gemini: ${err.message}`);
     }
   }
 
-  if (!result) {
-    const missingKeysMsg = !getGeminiKey() && !getOpenRouterKey() && !getGroqKey()
-      ? "No API key configured. Please set GEMINI_API_KEY in Environment Variables."
-      : lastError?.message || "All AI providers failed.";
-
+  if (!resultData) {
     return {
       status: 500,
       data: {
-        error: "Failed to generate SQL explanation.",
-        details: missingKeysMsg,
+        error: "Failed to generate SQL explanation from available AI services.",
+        details: errors.join(" | ") || "Check network connectivity or API key quotas.",
         retryable: true
       }
     };
   }
 
-  result.provider = providerUsed;
-  if (result.isValidSql === undefined) {
-    result.isValidSql = true;
+  resultData.provider = providerUsed;
+  if (resultData.isValidSql === undefined) {
+    resultData.isValidSql = true;
   }
 
-  return { status: 200, data: result };
+  return { status: 200, data: resultData };
 }
